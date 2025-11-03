@@ -1,7 +1,7 @@
 # Streaming Proxy Server
 
 A Node.js application to proxy and rewrite `.m3u8` streaming URLs with **caching**, **origin lock**, **rate limiting**, **logging**, and **Docker support**.
----
+
 
 ## Features
 - **Caching**: Responses are cached in memory to reduce repeated requests to the origin server.
@@ -12,8 +12,42 @@ A Node.js application to proxy and rewrite `.m3u8` streaming URLs with **caching
 - **Docker Support**: Easily deploy the application using Docker.
 - **Health Check**: Monitor the application's status.
 
----
-  
+## Getting started
+
+1. Run the container
+
+    ```yml
+    services:
+      vvp:
+        image: vrc-video-proxy
+        build:
+          context: vrc-video-proxy
+          dockerfile: Dockerfile
+        container_name: vvp
+        restart: unless-stopped
+        labels:
+          - "traefik.enable=true"
+          - "traefik.http.routers.vvp.rule=Host(`yourdomain.com`)"
+          - "traefik.http.services.vvp.loadbalancer.server.port=3000"
+          - "traefik.http.routers.vvp.entrypoints=websecure"
+          - "traefik.http.routers.vvp.tls.certresolver=mytlschallenge"
+        networks:
+          - default
+          - ingress
+
+    networks:
+      ingress:
+        external: true
+    ```
+
+2. Get the url and urlencode it
+
+    `yt-dlp -gS proto:m3u8 "youtube-url" | jq -sRr @uri`
+
+3. Load your proxy link into a VRC player
+
+    `https://yourdomain.com/api/v1/streamingProxy?url=<urlencoded-url>`
+
 ---
 
 ## **Technologies Used**
@@ -149,4 +183,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## **Support**
 If you encounter any issues or have questions, please open an issue on [GitHub](https://github.com/metahat/m3u8-streaming-proxy-/issues).
-
