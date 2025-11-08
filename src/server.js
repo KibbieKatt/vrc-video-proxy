@@ -21,8 +21,9 @@ const env = cleanEnv(process.env, {
 const app = express();
 const PORT = env.PORT;
 
-// Initialize cache with a TTL of 10 minutes (600 seconds)
-const cache = new NodeCache({ stdTTL: 600 });
+// Initialize cache with a TTL of 5 hours
+// Intended to last the duration of a watch party
+const cache = new NodeCache({ stdTTL: 18000 });
 // Use a mutex to avoid racing fetches
 const cacheMutex = new Mutex();
 
@@ -159,7 +160,7 @@ app.get('/watch', async (req, res) => {
               // Tecnically thix promise leaks rejections but I'm choosing to not think about it
               const playlistData = await response.text();
               const modifiedPlaylist = rewritePlaylistUrls(playlistData, url);
-              cache.set(videoID, modifiedPlaylist, 3600); // 6 hour expiry
+              cache.set(videoID, modifiedPlaylist);
 
               return playlistData;
             });
@@ -169,7 +170,7 @@ app.get('/watch', async (req, res) => {
       // Separate response code outside mutex to avoid blocking on data transfer
       res.set({
         "Content-Type": "application/vnd.apple.mpegurl",
-        "Cache-Control": "public, max-age=3600" // Playlists have a 6 hour expiry (supposedly)
+        "Cache-Control": "public, max-age=600" // 10 minutes
       });
       return res.status(200).send(playlistData);
     }).catch((error) => {
