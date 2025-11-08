@@ -8,6 +8,8 @@ const NodeCache = require('node-cache');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const { cleanEnv, str, num } = require('envalid');
+const youtubedl = require('youtube-dl-exec')
+const { Mutex } = require('async-mutex');
 
 // Validate environment variables
 const env = cleanEnv(process.env, {
@@ -21,6 +23,8 @@ const PORT = env.PORT;
 
 // Initialize cache with a TTL of 10 minutes (600 seconds)
 const cache = new NodeCache({ stdTTL: 600 });
+// Use a mutex to avoid racing fetches
+const cacheMutex = new Mutex();
 
 // Logging middleware
 app.use(morgan('dev'));
@@ -117,6 +121,66 @@ app.get('/api/v1/streamingProxy', async (req, res) => {
     return res.status(500).json({
       error: "Failed to fetch data",
       details: error.message
+    });
+  }
+});
+
+app.get('/watch', async (req, res) => {
+  const videoID = req.query.v;
+  if (/^([\w-]{11})$/.test(videoID)) {
+    // Use mutex to make cache check/load atomic.
+    // Intended to block raced clients until the first completes and
+    // primes the cache for the second
+    return cacheMutex.runExclusive(async () => {
+      const cachedResponse = cache.get(videoID);
+
+      if (cachedResponse) {
+        console.log(`Serving from cache: ${videoID}`);
+
+        return cachedResponse;
+      } else {
+        console.log(`New request for: ${videoID}`);
+
+        // Get m3u8 from yt-dlp
+        return youtubedl(`https://www.youtube.com/watch?v=${videoID}`, {
+          g: true,
+          formatSort: "proto:m3u8",
+        })
+        .then(async (url) => {
+          // Proxy m3u8 and rewrite URLs before caching and responding
+          return fetchWithCustomReferer(url, env.REFERER_URL)
+            .then(async (response) => {
+              if (!response.ok) {
+                return res.status(response.status).json({
+                  error: response.statusText,
+                  status: response.status
+                });
+              }
+              // Tecnically thix promise leaks rejections but I'm choosing to not think about it
+              const playlistData = await response.text();
+              const modifiedPlaylist = rewritePlaylistUrls(playlistData, url);
+              cache.set(videoID, modifiedPlaylist, 3600); // 6 hour expiry
+
+              return playlistData;
+            });
+        });
+      }
+    }).then(playlistData => {
+      // Separate response code outside mutex to avoid blocking on data transfer
+      res.set({
+        "Content-Type": "application/vnd.apple.mpegurl",
+        "Cache-Control": "public, max-age=3600" // Playlists have a 6 hour expiry (supposedly)
+      });
+      return res.status(200).send(playlistData);
+    }).catch((error) => {
+      res.status(500).json({
+        error: "Failed to fetch playlist from yt-dlp",
+        details: error.message
+      });
+    });
+  } else {
+    res.status(500).json({
+      error: "Failed to validate video ID",
     });
   }
 });
