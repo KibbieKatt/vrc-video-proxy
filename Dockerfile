@@ -1,5 +1,10 @@
 # Use the official Node.js image
-FROM node:16
+FROM node:22
+
+# Install python for yt-dlp
+RUN apt-get update \
+  && apt-get install -y python3 python3-pip \
+  && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
