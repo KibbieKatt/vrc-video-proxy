@@ -148,6 +148,14 @@ app.get('/watch', async (req, res) => {
           formatSort: "proto:m3u8",
         })
         .then(async (url) => {
+          // YouTime may decide to give only http sources
+          // we don't support this for now
+          if (!url.endsWith(".m3u8")) {
+            console.log("Failed to get m3u8 source");
+            return Promise.reject({
+              message: "YouTube returned a non-m3u8 url"
+            });
+          }
           // Proxy m3u8 and rewrite URLs before caching and responding
           return fetchWithCustomReferer(url, env.REFERER_URL)
             .then(async (response) => {
